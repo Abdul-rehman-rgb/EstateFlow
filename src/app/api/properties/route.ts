@@ -19,10 +19,10 @@ export const GET = api(async (req, user) => {
   if (q.get("bedrooms")) { where.push("p.bedrooms = ?"); params.push(int(q.get("bedrooms"))); }
   if (q.get("q")) {
     const like = `%${q.get("q")}%`;
-    where.push("(p.title LIKE ? OR p.ref LIKE ? OR p.location LIKE ?)");
+    where.push("(p.title ILIKE ? OR p.ref ILIKE ? OR p.location ILIKE ?)");
     params.push(like, like, like);
   }
-  const rows = db()
+  const rows = await db()
     .prepare(
       `SELECT p.*, (SELECT COUNT(*) FROM leads l WHERE l.property_id = p.id) AS enquiries
        FROM properties p WHERE ${where.join(" AND ")} ORDER BY p.updated_at DESC LIMIT 300`,
@@ -37,18 +37,18 @@ export const POST = api(async (req, user) => {
   const input = propertyInput(body, false);
   const branchId = scopeOf(user) === "all" ? int(body.branch_id) ?? user.branch_id : user.branch_id;
   const now = nowIso();
-  const id = tx(() => {
+  const id = await tx(async () => {
     const cols: Row = { ...input, ref: `TMP-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, branch_id: branchId,
       status: "draft", listed_by: user.id, created_at: now, updated_at: now };
     const keys = Object.keys(cols);
-    const res = db().prepare(`INSERT INTO properties (${keys.join(",")}) VALUES (${keys.map(() => "?").join(",")})`)
+    const res = await db().prepare(`INSERT INTO properties (${keys.join(",")}) VALUES (${keys.map(() => "?").join(",")})`)
       .run(...keys.map((k) => cols[k] ?? null));
     const pid = Number(res.lastInsertRowid);
     const ref = str(body.ref) ?? nextRef(pid);
-    db().prepare("UPDATE properties SET ref = ? WHERE id = ?").run(ref, pid);
-    audit(user.id, "create", "property", pid, { ref, title: input.title });
+    await db().prepare("UPDATE properties SET ref = ? WHERE id = ?").run(ref, pid);
+    await audit(user.id, "create", "property", pid, { ref, title: input.title });
     return pid;
   });
-  return db().prepare("SELECT * FROM properties WHERE id = ?").get(id);
+  return await db().prepare("SELECT * FROM properties WHERE id = ?").get(id);
 });
 

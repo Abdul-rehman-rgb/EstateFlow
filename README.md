@@ -1,16 +1,24 @@
-# Real Estate CRM
+# EstateFlow — Real Estate CRM
 
 A working first release of the **Launch MVP** scope from the Real Estate CRM Feature Catalogue
-(section 17), for UAE brokerages. Built with **Next.js 15 (App Router) and Node.js 22**, using
-Node's built-in SQLite (`node:sqlite`) so there is no native database build step.
+(section 17), for UAE brokerages. Built with **Next.js 15 (App Router) and Node.js 22**, on
+**PostgreSQL** (tested on [Neon](https://neon.tech)), so it runs on serverless hosts such as Vercel.
 
 ## Quick start
 
+Create `.env.local` with a Postgres connection string:
+
+```bash
+DATABASE_URL=postgresql://user:password@host/db?sslmode=require
+```
+
 ```bash
 npm install
-npm run seed          # demo data (refuses to overwrite an existing database)
+npm run seed          # demo data (refuses to run if the database already has users)
 npm run dev           # http://localhost:3000
 ```
+
+The schema is created automatically on first connection.
 
 Production:
 
@@ -19,14 +27,25 @@ npm run build
 NODE_ENV=production npm start
 ```
 
-Environment variables (optional):
+Environment variables:
 
-| Variable | Default | Purpose |
+| Variable | Required | Purpose |
 | --- | --- | --- |
-| `CRM_DB_PATH` | `data/crm.db` | SQLite database file |
-| `CRM_UPLOAD_DIR` | `data/uploads` | Where uploaded documents are stored |
+| `DATABASE_URL` | yes | Postgres connection string (use Neon's pooled `-pooler` host on serverless) |
+| `PG_POOL_MAX` | no (default 5) | Connections per server instance |
+| `TEST_DATABASE_URL` | for tests | A disposable database the tests wipe and reseed |
 
-Reset demo data with `npm run seed -- --reset`.
+Reset demo data with `npm run seed -- --reset` (drops every table first).
+
+### Deploying to Vercel
+
+1. Import the GitHub repository in Vercel (framework preset: Next.js).
+2. Add `DATABASE_URL` under Project → Settings → Environment Variables.
+3. Deploy, then create the first admin from your machine with
+   `npm run create-admin -- --name "…" --email … --password "…"` (it reads `DATABASE_URL` from `.env.local`).
+
+Uploaded documents are stored in Postgres (`document_files`), so nothing depends on the server's disk.
+Uploads are limited to 4 MB because Vercel caps request bodies at 4.5 MB.
 
 ### Demo accounts
 
@@ -49,7 +68,8 @@ Password for every demo account: `Demo@12345` (change it immediately outside dev
 npm run build && npm test
 ```
 
-`npm test` starts the production build against a throwaway seeded database and runs 48
+`npm test` starts the production build against `TEST_DATABASE_URL` (wiped and reseeded — never point it at
+real data) and runs 48
 end-to-end API tests covering authentication, role scope, duplicate detection, assignment,
 viewing conflicts, the listing approval workflow, deal stages, commission approval, document
 access, CSV import, reports and the audit trail.
@@ -127,4 +147,5 @@ test/api.test.ts        End-to-end API tests
 3. Confirm the UAE-specific points in catalogue section 19 with the client: advertising permits,
    portal API access, VAT, data-retention rules and document templates. This release supports
    operational tracking only and is not a substitute for official systems.
-4. Back up `data/` (the database and uploads) on a schedule and test the restore.
+4. Back up the Postgres database (it also holds uploaded documents) on a schedule and test the restore.
+   On Neon, point-in-time restore and branches cover this.

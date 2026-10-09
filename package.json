@@ -13,11 +13,13 @@
   },
   "dependencies": {
     "next": "15.5.26",
+    "pg": "^8.23.1",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "tsx": "^4.23.15",

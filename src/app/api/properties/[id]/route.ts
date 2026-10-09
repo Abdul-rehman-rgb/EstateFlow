@@ -5,23 +5,23 @@ import { ApiError, nowIso } from "@/lib/util";
 import { requirePerm } from "@/lib/permissions";
 import { propertyInput, visibleProperty } from "@/lib/properties";
 
-function detail(id: number) {
+async function detail(id: number) {
   const d = db();
-  const property = d.prepare("SELECT * FROM properties WHERE id = ?").get(id) as Row;
-  const viewings = d.prepare(
+  const property = await d.prepare("SELECT * FROM properties WHERE id = ?").get(id) as Row;
+  const viewings = await d.prepare(
     `SELECT v.*, l.name AS lead_name, u.name AS agent_name FROM viewings v
      JOIN leads l ON l.id = v.lead_id LEFT JOIN users u ON u.id = v.agent_id
      WHERE v.property_id = ? ORDER BY v.scheduled_at DESC LIMIT 100`,
   ).all(id) as Row[];
-  const enquiries = d.prepare("SELECT COUNT(*) AS c FROM leads WHERE property_id = ?").get(id) as Row;
-  const offers = d.prepare(
+  const enquiries = await d.prepare("SELECT COUNT(*) AS c FROM leads WHERE property_id = ?").get(id) as Row;
+  const offers = await d.prepare(
     `SELECT COUNT(*) AS c FROM deals WHERE property_id = ?`,
   ).get(id) as Row;
-  const documents = d.prepare(
+  const documents = await d.prepare(
     "SELECT id, kind, title, original_name, version, approval_status, expires_at, sensitive, created_at FROM documents WHERE property_id = ? ORDER BY created_at DESC",
   ).all(id);
-  const deals = d.prepare("SELECT * FROM deals WHERE property_id = ? ORDER BY id DESC").all(id);
-  const listedBy = d.prepare("SELECT name FROM users WHERE id = ?").get(property.listed_by) as Row | undefined;
+  const deals = await d.prepare("SELECT * FROM deals WHERE property_id = ? ORDER BY id DESC").all(id);
+  const listedBy = await d.prepare("SELECT name FROM users WHERE id = ?").get(property.listed_by) as Row | undefined;
   return {
     ...property,
     listed_by_name: listedBy?.name ?? null,
@@ -39,23 +39,23 @@ function detail(id: number) {
 
 export const GET = api(async (_req, user, p) => {
   const id = idParam(p.id);
-  if (!visibleProperty(user, id)) throw new ApiError(404, "Property not found.");
-  return detail(id);
+  if (!await visibleProperty(user, id)) throw new ApiError(404, "Property not found.");
+  return await detail(id);
 });
 
 export const PATCH = api(async (req, user, p) => {
   requirePerm(user, "properties:write");
   const id = idParam(p.id);
-  const existing = visibleProperty(user, id);
+  const existing = await visibleProperty(user, id);
   if (!existing) throw new ApiError(404, "Property not found.");
   const changes = propertyInput(await readJson(req), true);
   if (Object.keys(changes).length) {
-    tx(() => {
+    await tx(async () => {
       const keys = Object.keys(changes);
-      db().prepare(`UPDATE properties SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ?`)
+      await db().prepare(`UPDATE properties SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ?`)
         .run(...keys.map((k) => changes[k] ?? null), nowIso(), id);
-      audit(user.id, "update", "property", id, { fields: keys });
+      await audit(user.id, "update", "property", id, { fields: keys });
     });
   }
-  return detail(id);
+  return await detail(id);
 });

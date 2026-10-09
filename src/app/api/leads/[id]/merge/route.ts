@@ -10,7 +10,7 @@ export const POST = api(async (req, user, p) => {
   const body = await readJson(req);
   const sourceId = int(body.source_id);
   if (!sourceId) throw new ApiError(400, "source_id is required.");
-  if (!visibleLead(user, targetId) || !visibleLead(user, sourceId)) throw new ApiError(404, "Lead not found.");
-  tx(() => mergeLeads(user, targetId, sourceId));
+  if (!await visibleLead(user, targetId) || !await visibleLead(user, sourceId)) throw new ApiError(404, "Lead not found.");
+  await tx(async () => await mergeLeads(user, targetId, sourceId));
   return { ok: true };
 });

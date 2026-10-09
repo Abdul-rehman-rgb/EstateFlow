@@ -26,5 +26,5 @@ export const POST = api(async (req, user, p) => {
   if (!(file instanceof File)) throw new ApiError(400, "Upload a CSV file.");
   if (!file.name.toLowerCase().endsWith(".csv")) throw new ApiError(400, "Only CSV files are supported. Export your spreadsheet as CSV first.");
   const commit = new URL(req.url).searchParams.get("commit") === "1";
-  return runImport(user, entity, await file.text(), commit);
+  return await runImport(user, entity, await file.text(), commit);
 });

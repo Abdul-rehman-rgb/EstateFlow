@@ -9,15 +9,15 @@ export { hashPassword, verifyPassword };
 export const SESSION_COOKIE = "crm_session";
 const SESSION_HOURS = 12;
 
-export function createSession(userId: number): string {
+export async function createSession(userId: number): Promise<string> {
   const token = crypto.randomBytes(32).toString("hex");
   const expires = Date.now() + SESSION_HOURS * 3_600_000;
-  db().prepare("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)").run(token, userId, expires);
+  await db().prepare("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)").run(token, userId, expires);
   return token;
 }
 
-export function destroySession(token: string) {
-  db().prepare("DELETE FROM sessions WHERE token = ?").run(token);
+export async function destroySession(token: string) {
+  await db().prepare("DELETE FROM sessions WHERE token = ?").run(token);
 }
 
 export function sessionCookieOptions() {
@@ -43,7 +43,7 @@ export type CurrentUser = {
 export async function currentUser(): Promise<CurrentUser | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  const row = db()
+  const row = await db()
     .prepare(
       `SELECT u.id, u.name, u.email, u.role, u.branch_id, u.team_id, s.expires_at
        FROM sessions s JOIN users u ON u.id = s.user_id
@@ -52,7 +52,7 @@ export async function currentUser(): Promise<CurrentUser | null> {
     .get(token) as (CurrentUser & { expires_at: number }) | undefined;
   if (!row) return null;
   if (row.expires_at < Date.now()) {
-    destroySession(token);
+    await destroySession(token);
     return null;
   }
   const { expires_at: _ignored, ...user } = row;

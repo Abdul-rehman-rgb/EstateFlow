@@ -40,14 +40,14 @@ function parseFile(text: string, entity: ImportEntity): { rows: Parsed; headerEr
   return { rows, headerErrors };
 }
 
-export function runImport(user: CurrentUser, entity: ImportEntity, text: string, commit: boolean) {
+export async function runImport(user: CurrentUser, entity: ImportEntity, text: string, commit: boolean) {
   const { rows, headerErrors } = parseFile(text, entity);
   const errors: { row: number; message: string }[] = [];
   const skipped: { row: number; reason: string }[] = [];
   const valid: { row: number; input: Row }[] = [];
   const seenPhones = new Set<string>();
   const seenEmails = new Set<string>();
-  const branchId = scopeOf(user) === "all" ? defaultBranchId(user) : user.branch_id;
+  const branchId = scopeOf(user) === "all" ? await defaultBranchId(user) : user.branch_id;
 
   for (const { row, data } of rows) {
     try {
@@ -57,7 +57,7 @@ export function runImport(user: CurrentUser, entity: ImportEntity, text: string,
           skipped.push({ row, reason: "Duplicate of an earlier row in this file" });
           continue;
         }
-        if (findDuplicates(input.phone_norm, input.email_norm).length) {
+        if ((await findDuplicates(input.phone_norm, input.email_norm)).length) {
           skipped.push({ row, reason: "Already exists in the CRM" });
           continue;
         }
@@ -66,7 +66,7 @@ export function runImport(user: CurrentUser, entity: ImportEntity, text: string,
         valid.push({ row, input: { ...input, branch_id: branchId } });
       } else {
         const input = propertyInput(data, false);
-        if (data.ref && db().prepare("SELECT id FROM properties WHERE ref = ?").get(data.ref)) {
+        if (data.ref && (await db().prepare("SELECT id FROM properties WHERE ref = ?").get(data.ref))) {
           skipped.push({ row, reason: `Reference ${data.ref} already exists` });
           continue;
         }
@@ -86,17 +86,17 @@ export function runImport(user: CurrentUser, entity: ImportEntity, text: string,
 
   if (!valid.length) throw new ApiError(400, "No valid rows to import.", summary);
   const createdIds: number[] = [];
-  tx(() => {
+  await tx(async () => {
     for (const { input } of valid) {
       const now = nowIso();
       if (entity === "leads") {
-        const assignee = pickAssignee(input.branch_id ?? null);
+        const assignee = await pickAssignee(input.branch_id ?? null);
         const cols: Row = { ...input, status: assignee ? "assigned" : "new", assigned_to: assignee,
           created_by: user.id, created_at: now, updated_at: now };
         const keys = Object.keys(cols);
-        const id = Number(db().prepare(`INSERT INTO leads (${keys.join(",")}) VALUES (${keys.map(() => "?").join(",")})`)
-          .run(...keys.map((k) => cols[k] ?? null)).lastInsertRowid);
-        logActivity({ leadId: id, kind: "system", userId: user.id, body: "Imported from spreadsheet." });
+        const id = (await db().prepare(`INSERT INTO leads (${keys.join(",")}) VALUES (${keys.map(() => "?").join(",")})`)
+          .run(...keys.map((k) => cols[k] ?? null))).lastInsertRowid;
+        await logActivity({ leadId: id, kind: "system", userId: user.id, body: "Imported from spreadsheet." });
         createdIds.push(id);
       } else {
         const cols: Row = { ...input, status: "draft", listed_by: user.id, created_at: now, updated_at: now };
@@ -104,13 +104,13 @@ export function runImport(user: CurrentUser, entity: ImportEntity, text: string,
         delete cols.ref;
         cols.ref = `TMP-${Date.now()}-${createdIds.length}`;
         const keys = Object.keys(cols);
-        const id = Number(db().prepare(`INSERT INTO properties (${keys.join(",")}) VALUES (${keys.map(() => "?").join(",")})`)
-          .run(...keys.map((k) => cols[k] ?? null)).lastInsertRowid);
-        db().prepare("UPDATE properties SET ref = ? WHERE id = ?").run(ref ?? nextRef(id), id);
+        const id = (await db().prepare(`INSERT INTO properties (${keys.join(",")}) VALUES (${keys.map(() => "?").join(",")})`)
+          .run(...keys.map((k) => cols[k] ?? null))).lastInsertRowid;
+        await db().prepare("UPDATE properties SET ref = ? WHERE id = ?").run(ref ?? nextRef(id), id);
         createdIds.push(id);
       }
     }
-    audit(user.id, "import", entity, null, { created: createdIds.length, skipped: skipped.length, invalid: errors.length });
+    await audit(user.id, "import", entity, null, { created: createdIds.length, skipped: skipped.length, invalid: errors.length });
   });
   return { dryRun: false, ...summary, created: createdIds.length };
 }

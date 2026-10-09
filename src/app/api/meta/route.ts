@@ -26,8 +26,8 @@ export const GET = api(async (_req, user) => ({
     viewing_modes: VIEWING_MODES, viewing_outcomes: VIEWING_OUTCOMES, document_kinds: DOCUMENT_KINDS,
     priorities: PRIORITIES,
   },
-  settings: settings(),
-  branches: db().prepare("SELECT * FROM branches ORDER BY name").all(),
-  teams: db().prepare("SELECT * FROM teams ORDER BY name").all(),
-  users: db().prepare("SELECT id, name, role, branch_id, team_id FROM users WHERE active = 1 ORDER BY name").all(),
+  settings: await settings(),
+  branches: await db().prepare("SELECT * FROM branches ORDER BY name").all(),
+  teams: await db().prepare("SELECT * FROM teams ORDER BY name").all(),
+  users: await db().prepare("SELECT id, name, role, branch_id, team_id FROM users WHERE active = 1 ORDER BY name").all(),
 }));

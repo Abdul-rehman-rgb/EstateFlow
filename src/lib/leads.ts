@@ -54,9 +54,9 @@ export function leadInput(body: Row, partial: boolean) {
 }
 
 /** Other leads sharing a phone or email with the given contact details. */
-export function findDuplicates(phoneNorm: string | null, emailNorm: string | null, excludeId?: number): Row[] {
+export async function findDuplicates(phoneNorm: string | null, emailNorm: string | null, excludeId?: number): Promise<Row[]> {
   if (!phoneNorm && !emailNorm) return [];
-  return db()
+  return await db()
     .prepare(
       `SELECT id, name, phone, email, status, assigned_to, branch_id, created_at FROM leads
        WHERE ((phone_norm IS NOT NULL AND phone_norm = ?) OR (email_norm IS NOT NULL AND email_norm = ?))
@@ -65,17 +65,17 @@ export function findDuplicates(phoneNorm: string | null, emailNorm: string | nul
     .all(...[phoneNorm, emailNorm, ...(excludeId ? [excludeId] : [])]) as Row[];
 }
 
-export function defaultBranchId(user: CurrentUser): number | null {
+export async function defaultBranchId(user: CurrentUser): Promise<number | null> {
   if (user.branch_id) return user.branch_id;
-  const row = db().prepare("SELECT id FROM branches ORDER BY id LIMIT 1").get() as Row | undefined;
+  const row = await db().prepare("SELECT id FROM branches ORDER BY id LIMIT 1").get() as Row | undefined;
   return row?.id ?? null;
 }
 
 /** Picks an agent in the branch according to the configured assignment mode. */
-export function pickAssignee(branchId: number | null): number | null {
-  const mode = settings().assignment_mode;
+export async function pickAssignee(branchId: number | null): Promise<number | null> {
+  const mode = (await settings()).assignment_mode;
   if (mode === "manual" || branchId === null) return null;
-  const agents = db()
+  const agents = await db()
     .prepare("SELECT id FROM users WHERE role = 'agent' AND active = 1 AND branch_id = ? ORDER BY id")
     .all(branchId) as Row[];
   if (!agents.length) return null;
@@ -87,7 +87,7 @@ export function pickAssignee(branchId: number | null): number | null {
     let best = agents[0].id as number;
     let bestCount = Infinity;
     for (const a of agents) {
-      const c = (countStmt.get(a.id) as Row).c as number;
+      const c = ((await countStmt.get(a.id)) as Row).c as number;
       if (c < bestCount) {
         best = a.id;
         bestCount = c;
@@ -98,17 +98,17 @@ export function pickAssignee(branchId: number | null): number | null {
 
   // round_robin: continue after the last agent who received a lead in this branch.
   const key = `rr_last_branch_${branchId}`;
-  const last = Number(db().prepare("SELECT value FROM settings WHERE key = ?").get(key)?.value ?? 0);
+  const last = Number((await db().prepare("SELECT value FROM settings WHERE key = ?").get(key))?.value ?? 0);
   const next = agents.find((a) => (a.id as number) > last) ?? agents[0];
-  setSetting(key, String(next.id));
+  await setSetting(key, String(next.id));
   return next.id as number;
 }
 
-export function logActivity(a: {
+export async function logActivity(a: {
   leadId?: number | null; propertyId?: number | null; dealId?: number | null;
   kind: string; outcome?: string | null; body?: string | null; durationMin?: number | null; userId: number | null;
 }) {
-  db()
+  await db()
     .prepare(
       `INSERT INTO activities (lead_id, property_id, deal_id, kind, outcome, body, duration_min, user_id, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -118,7 +118,7 @@ export function logActivity(a: {
 }
 
 /** Priority score 0-100 from budget, intent, timing, source and response urgency. */
-export function scoreLead(lead: Row): { score: number; band: "High" | "Medium" | "Low" } {
+export function scoreLead(lead: Row, slaHours: number): { score: number; band: "High" | "Medium" | "Low" } {
   if (["won", "lost"].includes(lead.status)) return { score: 0, band: "Low" };
   let score = 0;
   if (lead.budget_max) score += 20;
@@ -129,7 +129,7 @@ export function scoreLead(lead: Row): { score: number; band: "High" | "Medium" |
   if (lead.property_id) score += 10;
   if (!lead.first_response_at && lead.status !== "nurture") {
     const hours = (Date.now() - new Date(lead.created_at).getTime()) / 3_600_000;
-    if (hours >= settings().sla_first_response_hours) score += 30;
+    if (hours >= slaHours) score += 30;
     else score += 10;
   }
   score = Math.min(100, score);
@@ -137,10 +137,10 @@ export function scoreLead(lead: Row): { score: number; band: "High" | "Medium" |
 }
 
 /** Active listings that fit a lead's purpose, budget, type, area and bedrooms. */
-export function matchProperties(lead: Row, user: CurrentUser, limit = 10) {
+export async function matchProperties(lead: Row, user: CurrentUser, limit = 10) {
   const listingType = lead.purpose === "rent" ? "rent" : "sale";
   const scope = inventoryScope(user);
-  const rows = db()
+  const rows = await db()
     .prepare(
       `SELECT * FROM properties WHERE status = 'active' AND listing_type = ? AND ${scope.sql}`,
     )
@@ -176,35 +176,35 @@ export function matchProperties(lead: Row, user: CurrentUser, limit = 10) {
 }
 
 /** Visibility-scoped lookup of a lead. Returns undefined when the user cannot see it. */
-export function visibleLead(user: CurrentUser, id: number): Row | undefined {
+export async function visibleLead(user: CurrentUser, id: number): Promise<Row | undefined> {
   const scope = ownerScope(user, "assigned_to", "branch_id", { unassignedVisible: true });
-  return db().prepare(`SELECT * FROM leads WHERE id = ? AND ${scope.sql}`).get(id, ...scope.params) as Row | undefined;
+  return await db().prepare(`SELECT * FROM leads WHERE id = ? AND ${scope.sql}`).get(id, ...scope.params) as Row | undefined;
 }
 
 /** Moves children of `sourceId` onto `targetId`, then deletes the source (audited). */
-export function mergeLeads(user: CurrentUser, targetId: number, sourceId: number) {
-  const target = db().prepare("SELECT * FROM leads WHERE id = ?").get(targetId) as Row | undefined;
-  const source = db().prepare("SELECT * FROM leads WHERE id = ?").get(sourceId) as Row | undefined;
+export async function mergeLeads(user: CurrentUser, targetId: number, sourceId: number) {
+  const target = await db().prepare("SELECT * FROM leads WHERE id = ?").get(targetId) as Row | undefined;
+  const source = await db().prepare("SELECT * FROM leads WHERE id = ?").get(sourceId) as Row | undefined;
   if (!target || !source) throw new ApiError(404, "Lead not found.");
   if (target.id === source.id) throw new ApiError(400, "Cannot merge a lead into itself.");
   const d = db();
   for (const table of ["activities", "tasks", "viewings", "deals", "documents"]) {
-    d.prepare(`UPDATE ${table} SET lead_id = ? WHERE lead_id = ?`).run(targetId, sourceId);
+    await d.prepare(`UPDATE ${table} SET lead_id = ? WHERE lead_id = ?`).run(targetId, sourceId);
   }
   // Fill blanks on the target from the source.
   const fill = ["phone", "phone_norm", "email", "email_norm", "nationality", "preferred_area", "campaign", "portal_ref"];
   const updates: Row = {};
   for (const f of fill) if (!target[f] && source[f]) updates[f] = source[f];
   if (Object.keys(updates).length) {
-    d.prepare(`UPDATE leads SET ${Object.keys(updates).map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ?`)
+    await d.prepare(`UPDATE leads SET ${Object.keys(updates).map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ?`)
       .run(...Object.values(updates), nowIso(), targetId);
   }
-  d.prepare("DELETE FROM leads WHERE id = ?").run(sourceId);
-  logActivity({ leadId: targetId, kind: "system", body: `Merged duplicate lead #${sourceId} (${source.name}) into this record.`, userId: user.id });
-  audit(user.id, "merge", "lead", targetId, { source_id: sourceId, source_name: source.name });
+  await d.prepare("DELETE FROM leads WHERE id = ?").run(sourceId);
+  await logActivity({ leadId: targetId, kind: "system", body: `Merged duplicate lead #${sourceId} (${source.name}) into this record.`, userId: user.id });
+  await audit(user.id, "merge", "lead", targetId, { source_id: sourceId, source_name: source.name });
 }
 
-export function validateStatus(status: unknown): string {
-  const allowed = settings().lead_stages;
+export async function validateStatus(status: unknown): Promise<string> {
+  const allowed = (await settings()).lead_stages;
   return oneOf(status, allowed as unknown as readonly string[], "status");
 }

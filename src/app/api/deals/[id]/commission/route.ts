@@ -8,7 +8,7 @@ import { APPROVABLE_COMMISSION_STAGES, visibleDeal } from "@/lib/deals";
 /** Commission workflow: pending -> approved (finance/owner) -> paid (finance). */
 export const POST = api(async (req, user, p) => {
   requirePerm(user, "commission:approve");
-  const deal = visibleDeal(user, idParam(p.id)) as Row | undefined;
+  const deal = await visibleDeal(user, idParam(p.id)) as Row | undefined;
   if (!deal) throw new ApiError(404, "Deal not found.");
   const body = await readJson(req);
   const action = oneOf(body.action, ["approve", "paid"] as const, "action");
@@ -18,14 +18,14 @@ export const POST = api(async (req, user, p) => {
   } else {
     if (deal.commission_status !== "approved") throw new ApiError(409, "Only approved commissions can be marked paid.");
   }
-  tx(() => {
+  await tx(async () => {
     if (action === "approve") {
-      db().prepare("UPDATE deals SET commission_status = 'approved', commission_approved_by = ?, updated_at = ? WHERE id = ?")
+      await db().prepare("UPDATE deals SET commission_status = 'approved', commission_approved_by = ?, updated_at = ? WHERE id = ?")
         .run(user.id, nowIso(), deal.id);
     } else {
-      db().prepare("UPDATE deals SET commission_status = 'paid', updated_at = ? WHERE id = ?").run(nowIso(), deal.id);
+      await db().prepare("UPDATE deals SET commission_status = 'paid', updated_at = ? WHERE id = ?").run(nowIso(), deal.id);
     }
-    audit(user.id, `commission_${action}`, "deal", deal.id, { amount: deal.commission_amount });
+    await audit(user.id, `commission_${action}`, "deal", deal.id, { amount: deal.commission_amount });
   });
-  return db().prepare("SELECT * FROM deals WHERE id = ?").get(deal.id);
+  return await db().prepare("SELECT * FROM deals WHERE id = ?").get(deal.id);
 });

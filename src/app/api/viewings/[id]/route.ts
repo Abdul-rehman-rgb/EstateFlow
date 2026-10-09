@@ -6,13 +6,13 @@ import { requirePerm, ownerScope } from "@/lib/permissions";
 import { logActivity } from "@/lib/leads";
 import { OUTCOME_LEAD_STATUS, VIEWING_OUTCOMES, VIEWING_STATUSES } from "@/lib/viewings";
 
-function visibleViewing(user: Parameters<typeof ownerScope>[0], id: number): Row | undefined {
+async function visibleViewing(user: Parameters<typeof ownerScope>[0], id: number): Promise<Row | undefined> {
   const scope = ownerScope(user, "agent_id", "branch_id");
-  return db().prepare(`SELECT * FROM viewings WHERE id = ? AND ${scope.sql}`).get(id, ...scope.params) as Row | undefined;
+  return await db().prepare(`SELECT * FROM viewings WHERE id = ? AND ${scope.sql}`).get(id, ...scope.params) as Row | undefined;
 }
 
 export const GET = api(async (_req, user, p) => {
-  const v = visibleViewing(user, idParam(p.id));
+  const v = await visibleViewing(user, idParam(p.id));
   if (!v) throw new ApiError(404, "Viewing not found.");
   return v;
 });
@@ -24,7 +24,7 @@ export const GET = api(async (_req, user, p) => {
 export const PATCH = api(async (req, user, p) => {
   requirePerm(user, "viewings:write");
   const id = idParam(p.id);
-  const v = visibleViewing(user, id);
+  const v = await visibleViewing(user, id);
   if (!v) throw new ApiError(404, "Viewing not found.");
   if (v.status === "rescheduled") throw new ApiError(409, "This viewing was rescheduled; update the new viewing instead.");
   const body = await readJson(req);
@@ -33,8 +33,8 @@ export const PATCH = api(async (req, user, p) => {
     ? oneOf(body.outcome, VIEWING_OUTCOMES, "outcome") : v.outcome;
   const now = nowIso();
 
-  tx(() => {
-    db().prepare(
+  await tx(async () => {
+    await db().prepare(
       `UPDATE viewings SET status = ?, outcome = ?, feedback = ?, objections = ?, next_steps = ?, updated_at = ? WHERE id = ?`,
     ).run(
       status, outcome,
@@ -46,10 +46,10 @@ export const PATCH = api(async (req, user, p) => {
     const outcomeChanged = outcome && outcome !== v.outcome;
     if (status === "completed" || status === "no_show") {
       if (outcomeChanged || (status !== v.status)) {
-        const lead = db().prepare("SELECT name, status FROM leads WHERE id = ?").get(v.lead_id) as Row;
+        const lead = await db().prepare("SELECT name, status FROM leads WHERE id = ?").get(v.lead_id) as Row;
         const followUp = outcome === "follow_up_required" || !outcome || outcome === "interested";
         if (status === "completed" && followUp) {
-          db().prepare(
+          await db().prepare(
             `INSERT INTO tasks (title, lead_id, property_id, branch_id, assigned_to, due_at, priority, created_by, created_at)
              VALUES (?, ?, ?, ?, ?, ?, 'high', ?, ?)`,
           ).run(`Post-viewing follow-up: ${lead.name}`, v.lead_id, v.property_id, v.branch_id, v.agent_id,
@@ -59,15 +59,15 @@ export const PATCH = api(async (req, user, p) => {
     }
     if (outcome && OUTCOME_LEAD_STATUS[outcome] && status === "completed") {
       const next = OUTCOME_LEAD_STATUS[outcome];
-      if (settings().lead_stages.includes(next)) {
-        db().prepare("UPDATE leads SET status = ?, updated_at = ? WHERE id = ?").run(next, now, v.lead_id);
+      if ((await settings()).lead_stages.includes(next)) {
+        await db().prepare("UPDATE leads SET status = ?, updated_at = ? WHERE id = ?").run(next, now, v.lead_id);
       }
     }
-    logActivity({
+    await logActivity({
       leadId: v.lead_id, propertyId: v.property_id, kind: "viewing", userId: user.id,
       outcome, body: `Viewing ${status}${outcome ? ` — ${outcome.replace(/_/g, " ")}` : ""}${body.feedback ? `: ${str(body.feedback)}` : ""}`,
     });
-    audit(user.id, "update", "viewing", id, { status, outcome });
+    await audit(user.id, "update", "viewing", id, { status, outcome });
   });
-  return db().prepare("SELECT * FROM viewings WHERE id = ?").get(id);
+  return await db().prepare("SELECT * FROM viewings WHERE id = ?").get(id);
 });

@@ -6,9 +6,9 @@ import { requirePerm } from "@/lib/permissions";
 import { commissionFor, DEAL_STAGES, syncDealEffects, visibleDeal } from "@/lib/deals";
 import { settings } from "@/lib/db";
 
-function detail(id: number) {
+async function detail(id: number) {
   const d = db();
-  const deal = d.prepare(
+  const deal = await d.prepare(
     `SELECT d.*, l.name AS lead_name, l.phone AS lead_phone, p.ref AS property_ref, p.title AS property_title,
             p.price AS list_price, u.name AS agent_name
      FROM deals d LEFT JOIN leads l ON l.id = d.lead_id LEFT JOIN properties p ON p.id = d.property_id
@@ -17,26 +17,26 @@ function detail(id: number) {
   return {
     ...deal,
     stages: DEAL_STAGES,
-    offers: d.prepare("SELECT * FROM offers WHERE deal_id = ? ORDER BY created_at DESC").all(id),
-    tasks: d.prepare(
+    offers: await d.prepare("SELECT * FROM offers WHERE deal_id = ? ORDER BY created_at DESC").all(id),
+    tasks: await d.prepare(
       "SELECT t.*, u.name AS assignee_name FROM tasks t JOIN users u ON u.id = t.assigned_to WHERE t.deal_id = ? ORDER BY t.status, t.due_at",
     ).all(id),
-    documents: d.prepare(
+    documents: await d.prepare(
       "SELECT id, kind, title, original_name, version, approval_status, expires_at, sensitive, created_at FROM documents WHERE deal_id = ? ORDER BY created_at DESC",
     ).all(id),
   };
 }
 
 export const GET = api(async (_req, user, p) => {
-  const deal = visibleDeal(user, idParam(p.id));
+  const deal = await visibleDeal(user, idParam(p.id));
   if (!deal) throw new ApiError(404, "Deal not found.");
-  return detail(deal.id);
+  return await detail(deal.id);
 });
 
 export const PATCH = api(async (req, user, p) => {
   requirePerm(user, "deals:write");
   const id = idParam(p.id);
-  const deal = visibleDeal(user, id) as Row | undefined;
+  const deal = await visibleDeal(user, id) as Row | undefined;
   if (!deal) throw new ApiError(404, "Deal not found.");
   if (user.role === "finance") throw new ApiError(403, "Finance users can view approved deals only.");
   const body = await readJson(req);
@@ -70,7 +70,7 @@ export const PATCH = api(async (req, user, p) => {
       throw new ApiError(409, "A deal can be closed won only after the contract is signed.");
     }
     if (stageChange === "closed_lost") {
-      lostReason = oneOf(body.lost_reason, settings().lost_reasons, "lost reason");
+      lostReason = oneOf(body.lost_reason, (await settings()).lost_reasons, "lost reason");
       changes.lost_reason = lostReason;
       changes.closed_at = nowIso();
     } else if (["closed_won"].includes(stageChange)) {
@@ -83,13 +83,13 @@ export const PATCH = api(async (req, user, p) => {
     changes.stage = stageChange;
   }
 
-  if (Object.keys(changes).length === 0) return detail(id);
-  tx(() => {
+  if (Object.keys(changes).length === 0) return await detail(id);
+  await tx(async () => {
     const keys = Object.keys(changes);
-    db().prepare(`UPDATE deals SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ?`)
+    await db().prepare(`UPDATE deals SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ?`)
       .run(...keys.map((k) => changes[k] ?? null), nowIso(), id);
-    if (stageChange) syncDealEffects(user, deal, stageChange, lostReason);
-    else audit(user.id, "update", "deal", id, { fields: keys });
+    if (stageChange) await syncDealEffects(user, deal, stageChange, lostReason);
+    else await audit(user.id, "update", "deal", id, { fields: keys });
   });
-  return detail(id);
+  return await detail(id);
 });

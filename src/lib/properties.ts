@@ -58,17 +58,17 @@ export function nextRef(id: number) {
   return `PRP-${String(id).padStart(5, "0")}`;
 }
 
-export function listingExpiry(from = nowIso()) {
-  return addDays(from, Number(setting("listing_validity_days")));
+export async function listingExpiry(from = nowIso()) {
+  return addDays(from, Number(await setting("listing_validity_days")));
 }
 
 export function canTransition(from: string, to: string) {
   return (TRANSITIONS[from] ?? []).includes(to);
 }
 
-export function visibleProperty(user: CurrentUser, id: number): Row | undefined {
+export async function visibleProperty(user: CurrentUser, id: number): Promise<Row | undefined> {
   const scope = inventoryScope(user);
-  return db().prepare(`SELECT * FROM properties WHERE id = ? AND ${scope.sql}`).get(id, ...scope.params) as Row | undefined;
+  return await db().prepare(`SELECT * FROM properties WHERE id = ? AND ${scope.sql}`).get(id, ...scope.params) as Row | undefined;
 }
 
 export function assertStatus(v: unknown) {

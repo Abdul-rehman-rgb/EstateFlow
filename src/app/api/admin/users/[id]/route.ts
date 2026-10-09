@@ -8,7 +8,7 @@ import { hashPassword } from "@/lib/password";
 export const PATCH = api(async (req, user, p) => {
   requirePerm(user, "users:manage");
   const id = idParam(p.id);
-  const target = db().prepare("SELECT * FROM users WHERE id = ?").get(id) as Row | undefined;
+  const target = await db().prepare("SELECT * FROM users WHERE id = ?").get(id) as Row | undefined;
   if (!target) throw new ApiError(404, "User not found.");
   const body = await readJson(req);
   const changes: Row = {};
@@ -31,12 +31,12 @@ export const PATCH = api(async (req, user, p) => {
     throw new ApiError(400, "Agents and managers must belong to a branch.");
   }
   if (Object.keys(changes).length) {
-    tx(() => {
+    await tx(async () => {
       const keys = Object.keys(changes);
-      db().prepare(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...keys.map((k) => changes[k] ?? null), id);
-      if (changes.active === 0) db().prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
-      audit(user.id, "update", "user", id, { fields: keys.filter((k) => k !== "password_hash"), password_reset: "password_hash" in changes });
+      await db().prepare(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...keys.map((k) => changes[k] ?? null), id);
+      if (changes.active === 0) await db().prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+      await audit(user.id, "update", "user", id, { fields: keys.filter((k) => k !== "password_hash"), password_reset: "password_hash" in changes });
     });
   }
-  return db().prepare("SELECT id, name, email, role, branch_id, team_id, active FROM users WHERE id = ?").get(id);
+  return await db().prepare("SELECT id, name, email, role, branch_id, team_id, active FROM users WHERE id = ?").get(id);
 });

@@ -13,7 +13,7 @@ export const GET = api(async (req, user) => {
   if (q.get("user_id")) { where.push("a.user_id = ?"); params.push(int(q.get("user_id"))); }
   if (q.get("action")) { where.push("a.action = ?"); params.push(q.get("action")!); }
   const limit = Math.min(int(q.get("limit")) ?? 200, 1000);
-  const rows = db().prepare(
+  const rows = await db().prepare(
     `SELECT a.*, u.name AS user_name FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
      WHERE ${where.join(" AND ")} ORDER BY a.id DESC LIMIT ?`,
   ).all(...params, limit) as Row[];

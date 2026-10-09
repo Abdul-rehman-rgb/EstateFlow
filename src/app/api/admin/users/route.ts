@@ -8,7 +8,7 @@ import { hashPassword } from "@/lib/password";
 export const GET = api(async (_req, user) => {
   requirePerm(user, "users:manage");
   return {
-    users: db().prepare(
+    users: await db().prepare(
       `SELECT u.id, u.name, u.email, u.role, u.branch_id, u.team_id, u.active, b.name AS branch_name, t.name AS team_name
        FROM users u LEFT JOIN branches b ON b.id = u.branch_id LEFT JOIN teams t ON t.id = u.team_id ORDER BY u.name`,
     ).all(),
@@ -27,14 +27,14 @@ export const POST = api(async (req, user) => {
     throw new ApiError(400, "Agents and managers must belong to a branch.");
   }
   const email = String(body.email).trim().toLowerCase();
-  if (db().prepare("SELECT id FROM users WHERE email = ?").get(email)) throw new ApiError(409, "A user with this email already exists.");
-  const id = tx(() => {
-    const res = db().prepare(
+  if (await db().prepare("SELECT id FROM users WHERE lower(email) = lower(?)").get(email)) throw new ApiError(409, "A user with this email already exists.");
+  const id = await tx(async () => {
+    const res = await db().prepare(
       "INSERT INTO users (name, email, password_hash, role, branch_id, team_id, active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
     ).run(str(body.name), email, hashPassword(password), role, branchId, int(body.team_id), nowIso());
     const uid = Number(res.lastInsertRowid);
-    audit(user.id, "create", "user", uid, { role, branch_id: branchId });
+    await audit(user.id, "create", "user", uid, { role, branch_id: branchId });
     return uid;
   });
-  return db().prepare("SELECT id, name, email, role, branch_id, team_id, active FROM users WHERE id = ?").get(id);
+  return await db().prepare("SELECT id, name, email, role, branch_id, team_id, active FROM users WHERE id = ?").get(id);
 });

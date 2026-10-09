@@ -269,7 +269,7 @@ ul.list { padding: 0; margin: 0; }
 
 /* ---------- Misc ---------- */
 .toolbar {
-  display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 16px;
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow);
 }
 .toolbar > * { flex: 0 1 190px; }

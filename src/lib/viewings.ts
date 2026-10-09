@@ -13,11 +13,11 @@ export function parseWhen(v: unknown): string {
 }
 
 /** The agent's scheduled viewings that overlap the requested slot. */
-export function findConflicts(agentId: number, startIso: string, durationMin: number, excludeId = 0): Row[] {
+export async function findConflicts(agentId: number, startIso: string, durationMin: number, excludeId = 0): Promise<Row[]> {
   const start = Date.parse(startIso);
   const end = start + durationMin * 60_000;
   const window = 24 * 3_600_000;
-  const rows = db()
+  const rows = await db()
     .prepare(
       `SELECT v.*, l.name AS lead_name, p.ref AS property_ref FROM viewings v
        JOIN leads l ON l.id = v.lead_id JOIN properties p ON p.id = v.property_id

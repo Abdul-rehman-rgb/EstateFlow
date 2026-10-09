@@ -10,7 +10,7 @@ const FINANCE_REPORTS = ["commissions", "pipeline"];
 export const GET = api(async (req, user, p) => {
   requirePerm(user, "reports:read");
   if (user.role === "finance" && !FINANCE_REPORTS.includes(p.name)) throw new ApiError(403, "Finance users can view commission and pipeline reports only.");
-  const report = buildReport(p.name, user);
+  const report = await buildReport(p.name, user);
   const format = new URL(req.url).searchParams.get("format");
   if (format === "csv") {
     requirePerm(user, "export:write");

@@ -1,19 +1,20 @@
 /**
  * End-to-end API tests. They run against the production build (`npm run build` first)
- * with a throwaway database seeded with the demo data.
+ * with the TEST_DATABASE_URL database, wiped and seeded with the demo data.
  */
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 
 // A random high port avoids collisions with stale servers from earlier runs.
 const PORT = 3300 + Math.floor(Math.random() * 500);
 const BASE = `http://127.0.0.1:${PORT}`;
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "crm-test-"));
-const ENV: NodeJS.ProcessEnv = { ...process.env, CRM_DB_PATH: path.join(TMP, "crm.db"), CRM_UPLOAD_DIR: path.join(TMP, "uploads"), NODE_ENV: "production" };
+try { process.loadEnvFile(".env.local"); } catch { /* use the existing environment */ }
+// Tests wipe and reseed the database, so they need a dedicated one (e.g. a Neon "test" branch).
+const TEST_DB = process.env.TEST_DATABASE_URL;
+if (!TEST_DB) throw new Error("Set TEST_DATABASE_URL to a disposable Postgres database before running the tests.");
+const ENV: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: TEST_DB, NODE_ENV: "production" };
+const SHELL = process.platform === "win32"; // npx is a .cmd shim on Windows
 let server: ChildProcess;
 
 type Session = { cookie: string; user: any };
@@ -42,8 +43,8 @@ async function login(email: string) {
 }
 
 before(async () => {
-  execFileSync("npx", ["tsx", "scripts/seed.ts"], { env: ENV, stdio: "pipe" });
-  server = spawn("npx", ["next", "start", "-p", String(PORT)], { env: ENV, stdio: "pipe" });
+  execFileSync("npx", ["tsx", "scripts/seed.ts", "--reset"], { env: ENV, stdio: "pipe", shell: SHELL });
+  server = spawn("npx", ["next", "start", "-p", String(PORT)], { env: ENV, stdio: "pipe", shell: SHELL });
   for (let i = 0; i < 120; i++) {
     try { const r = await fetch(`${BASE}/login`); if (r.ok) break; } catch { /* not up yet */ }
     await new Promise((r) => setTimeout(r, 500));
@@ -56,8 +57,10 @@ before(async () => {
 after(() => {
   try { server?.kill("SIGKILL"); } catch { /* already stopped */ }
   // `next start` forks a next-server worker that can outlive its parent; free the port explicitly.
-  try { execFileSync("fuser", ["-k", `${PORT}/tcp`], { stdio: "ignore" }); } catch { /* nothing listening */ }
-  fs.rmSync(TMP, { recursive: true, force: true });
+  try {
+    if (SHELL) execFileSync("cmd", ["/c", `for /f "tokens=5" %p in ('netstat -ano ^| findstr :${PORT} ^| findstr LISTENING') do taskkill /F /PID %p`], { stdio: "ignore" });
+    else execFileSync("fuser", ["-k", `${PORT}/tcp`], { stdio: "ignore" });
+  } catch { /* nothing listening */ }
 });
 
 describe("authentication", () => {

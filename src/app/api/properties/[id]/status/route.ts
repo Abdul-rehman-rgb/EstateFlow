@@ -14,7 +14,7 @@ import { assertStatus, canTransition, listingExpiry, transitionError, visiblePro
  */
 export const POST = api(async (req, user, p) => {
   const id = idParam(p.id);
-  const prop = visibleProperty(user, id) as Row | undefined;
+  const prop = await visibleProperty(user, id) as Row | undefined;
   if (!prop) throw new ApiError(404, "Property not found.");
   const body = await readJson(req);
   const action = str(body.action) ?? "status";
@@ -23,21 +23,21 @@ export const POST = api(async (req, user, p) => {
   if (action === "submit") {
     requirePerm(user, "properties:write");
     if (!canTransition(prop.status, "pending_approval")) throw new ApiError(409, `Cannot submit a ${prop.status} listing.`);
-    tx(() => {
-      db().prepare("UPDATE properties SET status = 'pending_approval', updated_at = ? WHERE id = ?").run(nowIso(), id);
-      audit(user.id, "submit_listing", "property", id);
+    await tx(async () => {
+      await db().prepare("UPDATE properties SET status = 'pending_approval', updated_at = ? WHERE id = ?").run(nowIso(), id);
+      await audit(user.id, "submit_listing", "property", id);
     });
   } else if (action === "approve" || action === "reject") {
     requirePerm(user, "properties:approve");
     if (prop.status !== "pending_approval") throw new ApiError(409, "Only listings pending approval can be reviewed.");
-    tx(() => {
+    await tx(async () => {
       if (action === "approve") {
-        db().prepare("UPDATE properties SET status = 'active', approved_by = ?, listing_expires_at = ?, updated_at = ? WHERE id = ?")
-          .run(user.id, listingExpiry(), nowIso(), id);
+        await db().prepare("UPDATE properties SET status = 'active', approved_by = ?, listing_expires_at = ?, updated_at = ? WHERE id = ?")
+          .run(user.id, await listingExpiry(), nowIso(), id);
       } else {
-        db().prepare("UPDATE properties SET status = 'draft', updated_at = ? WHERE id = ?").run(nowIso(), id);
+        await db().prepare("UPDATE properties SET status = 'draft', updated_at = ? WHERE id = ?").run(nowIso(), id);
       }
-      audit(user.id, action === "approve" ? "approve_listing" : "reject_listing", "property", id, { note });
+      await audit(user.id, action === "approve" ? "approve_listing" : "reject_listing", "property", id, { note });
     });
   } else if (action === "status") {
     requirePerm(user, "properties:write");
@@ -47,17 +47,17 @@ export const POST = api(async (req, user, p) => {
       throw new ApiError(err.status, err.message, err.extra);
     }
     if (to === "active") requirePerm(user, "properties:approve");
-    tx(() => {
+    await tx(async () => {
       if (to === "active") {
-        db().prepare("UPDATE properties SET status = 'active', listing_expires_at = ?, updated_at = ? WHERE id = ?")
-          .run(listingExpiry(), nowIso(), id);
+        await db().prepare("UPDATE properties SET status = 'active', listing_expires_at = ?, updated_at = ? WHERE id = ?")
+          .run(await listingExpiry(), nowIso(), id);
       } else {
-        db().prepare("UPDATE properties SET status = ?, updated_at = ? WHERE id = ?").run(to, nowIso(), id);
+        await db().prepare("UPDATE properties SET status = ?, updated_at = ? WHERE id = ?").run(to, nowIso(), id);
       }
-      audit(user.id, "status_change", "property", id, { from: prop.status, to, note });
+      await audit(user.id, "status_change", "property", id, { from: prop.status, to, note });
     });
   } else {
     throw new ApiError(400, "Unknown action. Use submit, approve, reject or status.");
   }
-  return db().prepare("SELECT * FROM properties WHERE id = ?").get(id);
+  return await db().prepare("SELECT * FROM properties WHERE id = ?").get(id);
 });

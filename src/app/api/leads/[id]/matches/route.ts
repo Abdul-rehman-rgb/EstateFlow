@@ -5,7 +5,7 @@ import { matchProperties, visibleLead } from "@/lib/leads";
 
 export const GET = api(async (_req, user, p) => {
   requirePerm(user, "leads:write");
-  const lead = visibleLead(user, idParam(p.id));
+  const lead = await visibleLead(user, idParam(p.id));
   if (!lead) throw new ApiError(404, "Lead not found.");
-  return { matches: matchProperties(lead, user) };
+  return { matches: await matchProperties(lead, user) };
 });
