@@ -90,7 +90,7 @@ export default async function Home() {
                   <div className="lp-mock-card">
                     <small>Pipeline</small>
                     <div className="lp-stages">
-                      {[["Offer", 72, "#0d9488"], ["Reserved", 54, "#14b8a6"], ["Signing", 36, "#5eead4"], ["Won", 22, "#f2c46d"]].map(([l, w, c]) => (
+                      {[["Offer", 72, "#1d4ed8"], ["Reserved", 54, "#3b82f6"], ["Signing", 36, "#93c5fd"], ["Won", 22, "#1e3a8a"]].map(([l, w, c]) => (
                         <div key={l as string}><span>{l}</span><i style={{ width: `${w}%`, background: c as string }} /></div>
                       ))}
                     </div>

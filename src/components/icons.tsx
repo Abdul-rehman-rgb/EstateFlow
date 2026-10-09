@@ -42,14 +42,9 @@ export function Icon({ name, size = 18, className, strokeWidth = 1.8 }: { name: 
 export function Logo({ size = 30 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden focusable="false">
-      <defs>
-        <linearGradient id="lg-logo" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#14b8a6" /><stop offset="1" stopColor="#0f766e" />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="8" fill="url(#lg-logo)" />
+      <rect width="32" height="32" rx="7" fill="#1d4ed8" />
       <path d="M7 15.5 16 8l9 7.5V25H7z" fill="#fff" />
-      <rect x="13" y="18" width="6" height="7" rx="1" fill="#0f766e" />
+      <rect x="13" y="18" width="6" height="7" rx="1" fill="#1d4ed8" />
     </svg>
   );
 }

@@ -43,7 +43,7 @@ export default function LoginPage() {
             <li><span><Icon name="money" size={16} /></span>Deal pipeline with commission approvals</li>
           </ul>
         </div>
-        <div className="small" style={{ color: "#7d8aa3" }}>© {new Date().getFullYear()} EstateFlow · Dubai · Abu Dhabi</div>
+        <div className="small" style={{ color: "#bfd3fe" }}>© {new Date().getFullYear()} EstateFlow · Dubai · Abu Dhabi</div>
       </aside>
 
       <main className="auth-main">
